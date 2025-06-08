@@ -8,7 +8,7 @@ class LDPCCode:
     LDPC (Low-Density Parity-Check) Code implementation
     """
 
-    def __init__(self, n: int = 15, k: int = 11):
+    def __init__(self, n: int = 12, k: int = 8):
         """
         Initialize LDPC code
         Args:
@@ -19,45 +19,26 @@ class LDPCCode:
         self.k = k  # Information length
         self.m = n - k  # Parity length
 
-        # Generate parity check matrix H
-        self.H = self._generate_parity_check_matrix()
+        # Generate matrices
+        self.H, self.G = self._generate_matrices()
 
-        # Generate generator matrix G
-        self.G = self._generate_generator_matrix()
-
-    def _generate_parity_check_matrix(self) -> np.ndarray:
+    def _generate_matrices(self) -> Tuple[np.ndarray, np.ndarray]:
         """
-        Generate a simple parity check matrix for demonstration
-        In practice, this would be more sophisticated
+        Generate compatible parity check matrix H and generator matrix G
+        Using systematic form where G = [I_k | P] and H = [P^T | I_m]
         """
-        # Create a simple structured LDPC matrix
-        H = np.zeros((self.m, self.n), dtype=int)
-
-        # Simple pattern for demonstration
-        for i in range(self.m):
-            # Each row has approximately 3-4 ones
-            positions = [(i + j) % self.n for j in range(0, self.n, 3)][:4]
-            for pos in positions:
-                H[i, pos] = 1
-
-        return H
-
-    def _generate_generator_matrix(self) -> np.ndarray:
-        """
-        Generate generator matrix from parity check matrix
-        Using systematic form: G = [I_k | P]
-        """
-        # Create identity matrix for systematic part
-        I_k = np.eye(self.k, dtype=int)
-
-        # Create parity matrix P (simplified approach)
-        # In practice, this requires more sophisticated matrix operations
+        # Create random parity matrix P (k x m)
         P = np.random.randint(0, 2, (self.k, self.m))
 
-        # Combine to form generator matrix
+        # Generator matrix in systematic form: G = [I_k | P]
+        I_k = np.eye(self.k, dtype=int)
         G = np.hstack([I_k, P])
 
-        return G
+        # Parity check matrix in systematic form: H = [P^T | I_m]
+        I_m = np.eye(self.m, dtype=int)
+        H = np.hstack([P.T, I_m])
+
+        return H, G
 
     def encode(self, info_bits: np.ndarray) -> np.ndarray:
         """
@@ -74,9 +55,16 @@ class LDPCCode:
         codeword = np.dot(info_bits, self.G) % 2
         return codeword.astype(int)
 
+    def check_codeword(self, codeword: np.ndarray) -> bool:
+        """
+        Check if codeword is valid (syndrome = 0)
+        """
+        syndrome = np.dot(self.H, codeword) % 2
+        return np.sum(syndrome) == 0
+
     def decode(self, received_bits: np.ndarray, max_iterations: int = 50) -> Tuple[np.ndarray, bool]:
         """
-        Decode received bits using belief propagation algorithm
+        Decode received bits using iterative decoding
         Args:
             received_bits: Received (possibly corrupted) bits
             max_iterations: Maximum number of iterations
@@ -86,8 +74,7 @@ class LDPCCode:
         if len(received_bits) != self.n:
             raise ValueError(f"Received bits must be {self.n} bits long")
 
-        # Initialize
-        decoded = received_bits.copy()
+        decoded = received_bits.copy().astype(int)
 
         for iteration in range(max_iterations):
             # Check syndrome
@@ -97,18 +84,23 @@ class LDPCCode:
             if np.sum(syndrome) == 0:
                 return decoded, True
 
-            # Simple bit-flipping algorithm
-            # Count parity check violations for each bit
-            violations = np.dot(self.H.T, syndrome) % 2
+            # Simple majority-logic decoding
+            # For each bit position, count how many parity checks it participates in that fail
+            error_counts = np.zeros(self.n)
 
-            # Find bit with most violations
-            max_violations = np.max(np.dot(self.H.T, syndrome))
-            if max_violations > 0:
-                # Flip bits with maximum violations
-                candidates = np.where(np.dot(self.H.T, syndrome) == max_violations)[0]
-                if len(candidates) > 0:
-                    bit_to_flip = candidates[0]
-                    decoded[bit_to_flip] = 1 - decoded[bit_to_flip]
+            for i in range(self.n):
+                # Find which parity checks involve bit i
+                parity_checks_for_bit_i = np.where(self.H[:, i] == 1)[0]
+                # Count how many of these parity checks fail
+                error_counts[i] = np.sum(syndrome[parity_checks_for_bit_i])
+
+            # Find the bit position with maximum error count
+            max_errors = np.max(error_counts)
+            if max_errors > 0:
+                # Flip the bit with most parity check failures
+                candidates = np.where(error_counts == max_errors)[0]
+                bit_to_flip = candidates[0]  # Choose first if tie
+                decoded[bit_to_flip] = 1 - decoded[bit_to_flip]
 
         return decoded, False
 
@@ -139,37 +131,40 @@ def bits_to_string(bits: List[int]) -> str:
     """
     if len(bits) % 8 != 0:
         # Pad with zeros if necessary
-        bits.extend([0] * (8 - len(bits) % 8))
+        bits = bits + [0] * (8 - len(bits) % 8)
 
     chars = []
     for i in range(0, len(bits), 8):
         byte_bits = bits[i:i + 8]
-        byte_value = int(''.join(map(str, byte_bits)), 2)
-        chars.append(chr(byte_value))
+        if len(byte_bits) == 8:  # Only process complete bytes
+            byte_value = int(''.join(map(str, byte_bits)), 2)
+            if byte_value > 0:  # Skip null characters from padding
+                chars.append(chr(byte_value))
 
     return ''.join(chars)
 
 
-def add_noise(bits: np.ndarray, error_rate: float = 0.1) -> np.ndarray:
+def add_noise(bits: np.ndarray, error_rate: float = 0.1) -> Tuple[np.ndarray, List[int]]:
     """
     Add random bit errors to simulate channel noise
     Args:
         bits: Original bits
         error_rate: Probability of bit error
     Returns:
-        Bits with added errors
+        Tuple of (bits_with_errors, error_positions)
     """
     noisy_bits = bits.copy()
-    n_errors = int(len(bits) * error_rate)
+    n_errors = max(1, int(len(bits) * error_rate)) if error_rate > 0 else 0
 
-    # Randomly select positions to flip
-    error_positions = random.sample(range(len(bits)), min(n_errors, len(bits)))
+    error_positions = []
+    if n_errors > 0:
+        # Randomly select positions to flip
+        error_positions = random.sample(range(len(bits)), min(n_errors, len(bits)))
 
-    for pos in error_positions:
-        noisy_bits[pos] = 1 - noisy_bits[pos]
+        for pos in error_positions:
+            noisy_bits[pos] = 1 - noisy_bits[pos]
 
-    print(f"Added {len(error_positions)} bit errors at positions: {error_positions}")
-    return noisy_bits
+    return noisy_bits, error_positions
 
 
 def process_string_with_ldpc(text: str, error_rate: float = 0.1) -> None:
@@ -180,14 +175,16 @@ def process_string_with_ldpc(text: str, error_rate: float = 0.1) -> None:
         error_rate: Bit error rate to simulate
     """
     print(f"Original text: '{text}'")
-    print("=" * 50)
+    print("=" * 60)
 
     # Convert string to bits
     original_bits = string_to_bits(text)
-    print(f"Original bits ({len(original_bits)} bits): {original_bits}")
+    print(f"Original bits ({len(original_bits)} bits):")
+    print(f"  {original_bits}")
 
     # Initialize LDPC codec
-    ldpc = LDPCCode(n=15, k=11)
+    ldpc = LDPCCode(n=12, k=8)
+    print(f"\nLDPC Parameters: n={ldpc.n}, k={ldpc.k}, m={ldpc.m}")
 
     # Process in chunks of k bits
     all_encoded = []
@@ -200,76 +197,142 @@ def process_string_with_ldpc(text: str, error_rate: float = 0.1) -> None:
 
     print(f"Padded bits ({len(padded_bits)} bits): {padded_bits}")
 
+    # Verify encoding works correctly first
+    print(f"\nENCODING PROCESS:")
+    print("-" * 40)
+
     # Encode chunks
-    for i in range(0, len(padded_bits), ldpc.k):
-        chunk = np.array(padded_bits[i:i + ldpc.k])
+    for i, chunk_start in enumerate(range(0, len(padded_bits), ldpc.k)):
+        chunk = np.array(padded_bits[chunk_start:chunk_start + ldpc.k])
         all_original_chunks.append(chunk)
         encoded_chunk = ldpc.encode(chunk)
+
+        # Verify encoding
+        is_valid = ldpc.check_codeword(encoded_chunk)
+        print(f"Chunk {i + 1}: {chunk.tolist()} -> {encoded_chunk.tolist()} (Valid: {is_valid})")
+
         all_encoded.extend(encoded_chunk)
 
     all_encoded = np.array(all_encoded)
-    print(f"LDPC encoded ({len(all_encoded)} bits): {all_encoded.tolist()}")
+    print(f"\nTotal encoded bits ({len(all_encoded)}): {all_encoded.tolist()}")
 
     # Add noise
-    print("\n" + "=" * 50)
-    print("ADDING CHANNEL NOISE")
-    print("=" * 50)
-    noisy_bits = add_noise(all_encoded, error_rate)
-    print(f"Corrupted bits: {noisy_bits.tolist()}")
+    print(f"\nADDING CHANNEL NOISE (Error rate: {error_rate * 100:.1f}%)")
+    print("=" * 60)
+
+    noisy_bits, error_positions = add_noise(all_encoded, error_rate)
+
+    if error_positions:
+        print(f"Added {len(error_positions)} bit errors at positions: {error_positions}")
+        print(f"Original:  {all_encoded.tolist()}")
+        print(f"Corrupted: {noisy_bits.tolist()}")
+
+        # Show differences
+        diff_str = ""
+        for i, (orig, corr) in enumerate(zip(all_encoded, noisy_bits)):
+            if orig != corr:
+                diff_str += f"Pos {i}: {orig}->{corr} "
+        print(f"Changes: {diff_str}")
+    else:
+        print("No errors added (0% error rate)")
+        print(f"Bits: {noisy_bits.tolist()}")
 
     # Decode chunks
-    print("\n" + "=" * 50)
-    print("LDPC DECODING")
-    print("=" * 50)
+    print(f"\nLDPC DECODING")
+    print("=" * 60)
 
     decoded_chunks = []
-    decode_success = []
+    decode_results = []
 
-    for i in range(0, len(noisy_bits), ldpc.n):
-        received_chunk = noisy_bits[i:i + ldpc.n]
+    for i, chunk_start in enumerate(range(0, len(noisy_bits), ldpc.n)):
+        received_chunk = noisy_bits[chunk_start:chunk_start + ldpc.n]
+        print(f"\nDecoding chunk {i + 1}:")
+        print(f"  Received: {received_chunk.tolist()}")
+
         decoded_chunk, success = ldpc.decode(received_chunk)
-        decoded_chunks.append(decoded_chunk[:ldpc.k])  # Extract info bits
-        decode_success.append(success)
-        print(f"Chunk {i // ldpc.n + 1}: {'SUCCESS' if success else 'FAILED'}")
+        info_bits = decoded_chunk[:ldpc.k]  # Extract information bits
+
+        decoded_chunks.append(info_bits)
+        decode_results.append(success)
+
+        print(f"  Decoded:  {decoded_chunk.tolist()}")
+        print(f"  Info bits: {info_bits.tolist()}")
+        print(f"  Status: {'SUCCESS' if success else 'FAILED'}")
+
+        # Verify decoded codeword
+        is_valid_after = ldpc.check_codeword(decoded_chunk)
+        print(f"  Valid codeword: {is_valid_after}")
 
     # Reconstruct decoded bits
     decoded_info_bits = []
     for chunk in decoded_chunks:
-        decoded_info_bits.extend(chunk)
+        decoded_info_bits.extend(chunk.tolist())
 
     # Trim to original length
     decoded_info_bits = decoded_info_bits[:len(original_bits)]
 
-    print("\n" + "=" * 50)
-    print("COMPARISON RESULTS")
-    print("=" * 50)
+    print(f"\nFINAL COMPARISON")
+    print("=" * 60)
+
+    print(f"Original bits:  {original_bits}")
+    print(f"Decoded bits:   {decoded_info_bits}")
 
     # Convert back to strings
     try:
         original_string = bits_to_string(original_bits)
         decoded_string = bits_to_string(decoded_info_bits)
 
-        print(f"Original text:  '{original_string}'")
+        print(f"\nOriginal text:  '{original_string}'")
         print(f"Decoded text:   '{decoded_string}'")
 
-        # Calculate bit error rates
-        original_array = np.array(original_bits)
-        decoded_array = np.array(decoded_info_bits)
+        # Calculate statistics
+        bit_errors = sum(1 for a, b in zip(original_bits, decoded_info_bits) if a != b)
+        total_bits = len(original_bits)
 
-        bit_errors = np.sum(original_array != decoded_array)
-        ber_before = np.sum(np.array(original_bits) != np.array(padded_bits[:len(original_bits)]))
-
-        print(f"\nBit Error Analysis:")
-        print(f"Bits before LDPC: {len(original_bits)}")
-        print(f"Bits after encoding: {len(all_encoded)}")
-        print(f"Remaining bit errors: {bit_errors}/{len(original_bits)}")
-        print(f"Bit Error Rate: {bit_errors / len(original_bits):.3f}")
-        print(f"String match: {'YES' if original_string == decoded_string else 'NO'}")
+        print(f"\nResults:")
+        print(f"  Bit errors corrected: {bit_errors}/{total_bits}")
+        print(f"  Bit Error Rate: {bit_errors / total_bits * 100:.1f}%")
+        print(f"  Text recovered: {'YES' if original_string == decoded_string else 'NO'}")
+        print(f"  Decoding success: {all(decode_results)}")
 
     except Exception as e:
         print(f"Error converting bits to string: {e}")
-        print(f"Original bits:  {original_bits}")
-        print(f"Decoded bits:   {decoded_info_bits}")
+
+
+def test_basic_ldpc():
+    """
+    Test basic LDPC functionality
+    """
+    print("BASIC LDPC TEST")
+    print("=" * 50)
+
+    ldpc = LDPCCode(n=12, k=8)
+
+    # Test with simple data
+    test_data = np.array([1, 0, 1, 1, 0, 1, 0, 1])  # 8 bits
+    print(f"Test data: {test_data}")
+
+    # Encode
+    encoded = ldpc.encode(test_data)
+    print(f"Encoded: {encoded}")
+    print(f"Valid codeword: {ldpc.check_codeword(encoded)}")
+
+    # Test decoding without errors
+    decoded, success = ldpc.decode(encoded)
+    print(f"Decoded (no errors): {decoded}")
+    print(f"Success: {success}")
+    print(f"Info bits match: {np.array_equal(test_data, decoded[:8])}")
+
+    # Test with one error
+    corrupted = encoded.copy()
+    corrupted[2] = 1 - corrupted[2]  # Flip bit 2
+    print(f"\nCorrupted (bit 2 flipped): {corrupted}")
+    print(f"Valid codeword: {ldpc.check_codeword(corrupted)}")
+
+    decoded_corr, success_corr = ldpc.decode(corrupted)
+    print(f"Decoded (with error): {decoded_corr}")
+    print(f"Success: {success_corr}")
+    print(f"Info bits match: {np.array_equal(test_data, decoded_corr[:8])}")
 
 
 def demo_ldpc():
@@ -279,27 +342,32 @@ def demo_ldpc():
     print("LDPC ENCODER/DECODER DEMONSTRATION")
     print("=" * 70)
 
+    # First, basic test
+    test_basic_ldpc()
+
+    print("\n" + "=" * 70)
+    print("STRING PROCESSING TESTS")
+    print("=" * 70)
+
     # Test cases
-    test_strings = [
-        "Hello",
-        "LDPC",
-        "Test123"
+    test_cases = [
+        ("Hi", 0.0),  # No errors
+        ("Hi", 0.01),  # 10% errors
+        ("Test", 0.02),  # 15% errors
+        ("LDPC", 0.05),  # 20% errors
     ]
 
-    error_rates = [0.05, 0.15, 0.25]
+    for text, error_rate in test_cases:
+        print(f"\n{'=' * 70}")
+        print(f"TEST: '{text}' with {error_rate * 100:.0f}% error rate")
+        print(f"{'=' * 70}")
 
-    for test_string in test_strings:
-        for error_rate in error_rates:
-            print(f"\n{'=' * 70}")
-            print(f"TEST: '{test_string}' with {error_rate * 100}% error rate")
-            print(f"{'=' * 70}")
-
-            try:
-                process_string_with_ldpc(test_string, error_rate)
-            except Exception as e:
-                print(f"Error processing '{test_string}': {e}")
-
-            print("\n" + "-" * 70)
+        try:
+            process_string_with_ldpc(text, error_rate)
+        except Exception as e:
+            print(f"Error processing '{text}': {e}")
+            import traceback
+            traceback.print_exc()
 
 
 if __name__ == "__main__":
@@ -310,14 +378,22 @@ if __name__ == "__main__":
     print("\n" + "=" * 70)
     print("INTERACTIVE MODE")
     print("=" * 70)
+    print("Enter text to test LDPC encoding/decoding")
+    print("(Press Ctrl+C to exit)")
 
     while True:
         try:
-            user_input = input("\nEnter text to encode/decode (or 'quit' to exit): ")
-            if user_input.lower() == 'quit':
-                break
+            user_input = input("\nEnter text: ").strip()
+            if not user_input:
+                continue
 
-            error_rate = float(input("Enter error rate (0.0-1.0, default 0.1): ") or "0.1")
+            error_rate_input = input("Enter error rate (0.0-0.5, default 0.1): ").strip()
+            try:
+                error_rate = float(error_rate_input) if error_rate_input else 0.1
+                error_rate = max(0.0, min(0.5, error_rate))  # Clamp to reasonable range
+            except ValueError:
+                error_rate = 0.1
+
             process_string_with_ldpc(user_input, error_rate)
 
         except KeyboardInterrupt:
@@ -325,3 +401,6 @@ if __name__ == "__main__":
             break
         except Exception as e:
             print(f"Error: {e}")
+            import traceback
+
+            traceback.print_exc()
