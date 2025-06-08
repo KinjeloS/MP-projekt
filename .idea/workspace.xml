@@ -4,7 +4,8 @@
     <option name="autoReloadType" value="SELECTIVE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="b4fefb27-94ed-479e-a97c-0471d9e3504b" name="Changes" comment="AI generated v1">
+    <list default="true" id="b4fefb27-94ed-479e-a97c-0471d9e3504b" name="Changes" comment="AI generated v2 - works with no noise">
+      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/projekt.py" beforeDir="false" afterPath="$PROJECT_DIR$/projekt.py" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
@@ -72,7 +73,7 @@
       <option name="number" value="Default" />
       <option name="presentableId" value="Default" />
       <updated>1749369435666</updated>
-      <workItem from="1749369436763" duration="1428000" />
+      <workItem from="1749369436763" duration="2220000" />
     </task>
     <task id="LOCAL-00001" summary="AI generated v1">
       <option name="closed" value="true" />
@@ -82,7 +83,15 @@
       <option name="project" value="LOCAL" />
       <updated>1749370514699</updated>
     </task>
-    <option name="localTasksCounter" value="2" />
+    <task id="LOCAL-00002" summary="AI generated v2 - works with no noise">
+      <option name="closed" value="true" />
+      <created>1749371182983</created>
+      <option name="number" value="00002" />
+      <option name="presentableId" value="LOCAL-00002" />
+      <option name="project" value="LOCAL" />
+      <updated>1749371182983</updated>
+    </task>
+    <option name="localTasksCounter" value="3" />
     <servers />
   </component>
   <component name="TypeScriptGeneratedFilesManager">
@@ -90,20 +99,10 @@
   </component>
   <component name="VcsManagerConfiguration">
     <MESSAGE value="AI generated v1" />
-    <option name="LAST_COMMIT_MESSAGE" value="AI generated v1" />
-  </component>
-  <component name="XDebuggerManager">
-    <breakpoint-manager>
-      <breakpoints>
-        <line-breakpoint enabled="true" suspend="THREAD" type="python-line">
-          <url>file://$PROJECT_DIR$/projekt.py</url>
-          <line>80</line>
-          <option name="timeStamp" value="2" />
-        </line-breakpoint>
-      </breakpoints>
-    </breakpoint-manager>
+    <MESSAGE value="AI generated v2 - works with no noise" />
+    <option name="LAST_COMMIT_MESSAGE" value="AI generated v2 - works with no noise" />
   </component>
   <component name="com.intellij.coverage.CoverageDataManagerImpl">
-    <SUITE FILE_PATH="coverage/LDPC_MP$projekt.coverage" NAME="projekt Coverage Results" MODIFIED="1749370664149" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$" />
+    <SUITE FILE_PATH="coverage/LDPC_MP$projekt.coverage" NAME="projekt Coverage Results" MODIFIED="1749371577040" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$" />
   </component>
 </project>

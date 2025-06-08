@@ -8,7 +8,7 @@ class LDPCCode:
     LDPC (Low-Density Parity-Check) Code implementation
     """
 
-    def __init__(self, n: int = 12, k: int = 8):
+    def __init__(self, n: int = 16, k: int = 8):
         """
         Initialize LDPC code
         Args:
@@ -183,7 +183,7 @@ def process_string_with_ldpc(text: str, error_rate: float = 0.1) -> None:
     print(f"  {original_bits}")
 
     # Initialize LDPC codec
-    ldpc = LDPCCode(n=12, k=8)
+    ldpc = LDPCCode(n=16, k=8)
     print(f"\nLDPC Parameters: n={ldpc.n}, k={ldpc.k}, m={ldpc.m}")
 
     # Process in chunks of k bits
@@ -271,32 +271,100 @@ def process_string_with_ldpc(text: str, error_rate: float = 0.1) -> None:
     # Trim to original length
     decoded_info_bits = decoded_info_bits[:len(original_bits)]
 
+    # Extract corrupted information bits (what data would look like without correction)
+    corrupted_info_bits = []
+    for i, chunk_start in enumerate(range(0, len(noisy_bits), ldpc.n)):
+        corrupted_chunk = noisy_bits[chunk_start:chunk_start + ldpc.n]
+        # Extract just the information bits from corrupted codeword (systematic code)
+        corrupted_info = corrupted_chunk[:ldpc.k].tolist()
+        corrupted_info_bits.extend(corrupted_info)
+
+    # Trim to original length
+    corrupted_info_bits = corrupted_info_bits[:len(original_bits)]
+
     print(f"\nFINAL COMPARISON")
     print("=" * 60)
 
-    print(f"Original bits:  {original_bits}")
-    print(f"Decoded bits:   {decoded_info_bits}")
+    print(f"Original bits:    {original_bits}")
+    print(f"Corrupted bits:   {corrupted_info_bits}")
+    print(f"LDPC decoded:     {decoded_info_bits}")
 
     # Convert back to strings
     try:
         original_string = bits_to_string(original_bits)
+        corrupted_string = bits_to_string(corrupted_info_bits)
         decoded_string = bits_to_string(decoded_info_bits)
 
-        print(f"\nOriginal text:  '{original_string}'")
-        print(f"Decoded text:   '{decoded_string}'")
+        print(f"\nSTRING COMPARISON:")
+        print(f"Original text:     '{original_string}'")
+        print(f"Without correction: '{corrupted_string}'")
+        print(f"With LDPC correction: '{decoded_string}'")
 
         # Calculate statistics
-        bit_errors = sum(1 for a, b in zip(original_bits, decoded_info_bits) if a != b)
+        corrupted_bit_errors = sum(1 for a, b in zip(original_bits, corrupted_info_bits) if a != b)
+        corrected_bit_errors = sum(1 for a, b in zip(original_bits, decoded_info_bits) if a != b)
         total_bits = len(original_bits)
 
-        print(f"\nResults:")
-        print(f"  Bit errors corrected: {bit_errors}/{total_bits}")
-        print(f"  Bit Error Rate: {bit_errors / total_bits * 100:.1f}%")
-        print(f"  Text recovered: {'YES' if original_string == decoded_string else 'NO'}")
-        print(f"  Decoding success: {all(decode_results)}")
+        print(f"\nERROR ANALYSIS:")
+        print(
+            f"  Bit errors without correction: {corrupted_bit_errors}/{total_bits} ({corrupted_bit_errors / total_bits * 100:.1f}%)")
+        print(
+            f"  Bit errors after LDPC:        {corrected_bit_errors}/{total_bits} ({corrected_bit_errors / total_bits * 100:.1f}%)")
+        print(f"  Bits corrected by LDPC:       {corrupted_bit_errors - corrected_bit_errors}")
+
+        print(f"\nTEXT RECOVERY:")
+        print(f"  Without correction: {'READABLE' if original_string == corrupted_string else 'CORRUPTED'}")
+        print(
+            f"  With LDPC:          {'PERFECT' if original_string == decoded_string else 'PARTIAL' if corrected_bit_errors < corrupted_bit_errors else 'FAILED'}")
+        print(f"  LDPC decoding:      {'SUCCESS' if all(decode_results) else 'PARTIAL SUCCESS'}")
+
+        # Show character-by-character comparison if strings are short
+        if len(original_string) <= 10:
+            print(f"\nCHARACTER-BY-CHARACTER:")
+            max_len = max(len(original_string), len(corrupted_string), len(decoded_string))
+            orig_padded = original_string.ljust(max_len)
+            corr_padded = corrupted_string.ljust(max_len)
+            ldpc_padded = decoded_string.ljust(max_len)
+
+            print(f"  Pos: ", end="")
+            for i in range(max_len):
+                print(f"{i:>3}", end="")
+            print()
+
+            print(f"  Orig: ", end="")
+            for char in orig_padded:
+                print(f"'{char}'", end="")
+            print()
+
+            print(f"  Corr: ", end="")
+            for char in corr_padded:
+                print(f"'{char}'", end="")
+            print()
+
+            print(f"  LDPC: ", end="")
+            for char in ldpc_padded:
+                print(f"'{char}'", end="")
+            print()
+
+            print(f"  Match:", end="")
+            for i in range(max_len):
+                orig_char = orig_padded[i] if i < len(orig_padded) else ' '
+                corr_char = corr_padded[i] if i < len(corr_padded) else ' '
+                ldpc_char = ldpc_padded[i] if i < len(ldpc_padded) else ' '
+
+                if orig_char == ldpc_char:
+                    print(" ✓ ", end="")
+                elif orig_char == corr_char:
+                    print(" - ", end="")
+                else:
+                    print(" ✗ ", end="")
+            print()
 
     except Exception as e:
         print(f"Error converting bits to string: {e}")
+        print(f"Original bits:    {original_bits}")
+        print(f"Corrupted bits:   {corrupted_info_bits}")
+        print(f"LDPC decoded:     {decoded_info_bits}")
 
 
 def test_basic_ldpc():
@@ -306,7 +374,7 @@ def test_basic_ldpc():
     print("BASIC LDPC TEST")
     print("=" * 50)
 
-    ldpc = LDPCCode(n=12, k=8)
+    ldpc = LDPCCode(n=16, k=8)
 
     # Test with simple data
     test_data = np.array([1, 0, 1, 1, 0, 1, 0, 1])  # 8 bits
